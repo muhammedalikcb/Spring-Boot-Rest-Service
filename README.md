@@ -1,82 +1,99 @@
+# Spring Boot REST Service for Parity Data
+
+[English](#en) | [Türkçe](#tr)
+
 # EN
 
-## Spring Boot Rest service for parity data
-### Spring Boot REST service, which contains parity data where TL equivalents of currencies are kept together with the Parity code and the day it belongs, and enables certain operations on this parity data.
+A Spring Boot REST service that stores currency parity data (the TRY value of each currency, together with its parity code and date) and runs a few operations on that data.
 
 ------------------
 
-- A method was used to calculate the ratio of two currency units to each other, and this method was included in the Controller Class with the **Dependency Injection Pattern.**
-- For yield change method calculation, 3 different functions were defined and these functions were implemented and used with the **Strategy Pattern.**
-- The **Factory Pattern** was used to select this 3 yield change method calculation more effectively than the request parameter to the service.
-- When unwanted situations occur in the requests sent by the user, the control of these situations was made with **Controller Advice Annotation** as **Global Exception Handling**. Each undesirable situation that occurred was handled separately.
-- Factory Pattern changed to be applied with Enum data type.
-- Separately handled Exceptions were defined by a function for each Exception in the RestErrorHandler defined by @ControllerAdvice Annotation. These functions were divided into 2 different functions according to their Http Status, and instead of giving Exceptions as a value to a function for each Exception collectively, 2 separate functions were given parameters collectively.
-- XMLParser Service was created in order to log parity data in XML format published on the [TCMB website](https://www.tcmb.gov.tr/kurlar/today.xml) on a daily basis in the database.
-  - Case 1: This service is called in SpringBootApplication.run() method to run when REST Service is run. [Commit](https://github.com/muhammedalikocabey/Spring-Boot-Rest-Service/commit/3b35ba6e2a5c12eb33de124e8516b7a7b1d1e758) for Detail.
-  - Case 2 : When the user makes a GET request, XMLParser runs within the request. [Commit](https://github.com/muhammedalikocabey/Spring-Boot-Rest-Service/commit/cdd2cd5969f3b83eb5ce116d06c975da4ac6cd64) for Detail
-- Cron Scheduler was added to keep the data up-to-date as the data was updated daily at the market closing (17.00).
+- Rates for a parity that isn't stored are calculated from two stored ones. For example, `USDEUR` for a given day is derived from that day's `USDTRY` and `EURTRY`. This calculation lives in `CalculateNonExistParity` and is injected into the controller (Dependency Injection).
+- Return change can be calculated in 3 ways: `absolute`, `relative` and `logaritmic`. Each one is a separate implementation of the same interface (Strategy pattern).
+- The method is chosen from the request path through a Factory, which was later rewritten as an enum (`ChangeModelFactory`).
+- Invalid requests are handled globally in `RestErrorHandler`, which is annotated with `@ControllerAdvice`. Each error case has its own exception.
+- At first there was one handler method per exception. These were then merged into 2 methods by HTTP status: `404 Not Found` for missing data (empty database, unknown date) and `406 Not Acceptable` for invalid input (duplicate entries, prices of zero or less, parity codes that aren't 6 characters, unknown parity codes, a start date after the end date).
+- `XMLService` reads the daily parity data that the Central Bank of Turkey publishes as XML on the [TCMB website](https://www.tcmb.gov.tr/kurlar/today.xml), and the results are saved to the database.
+  - Case 1: the first version ran the parser once at startup, from a `CommandLineRunner`. See the [commit](https://github.com/muhammedalikcb/Spring-Boot-Rest-Service/commit/3b35ba6e2a5c12eb33de124e8516b7a7b1d1e758) for details.
+  - Case 2: the parser now runs inside a GET request (`/dailyparity`). See the [commit](https://github.com/muhammedalikcb/Spring-Boot-Rest-Service/commit/cdd2cd5969f3b83eb5ce116d06c975da4ac6cd64) for details.
+- TCMB updates the data once a day at market close (17:00), so a scheduled cron job runs the parser every day at 17:00 (Europe/Istanbul) to keep the database current.
 
+### Requests within the service
 
+GET:
 
+- `127.0.0.1:8080/`: list all data
+- `127.0.0.1:8080/2020-11-21/`: list the data for the given date
+- `127.0.0.1:8080/2020-11-21/USDTRY`: list the data for the given date and parity code
+- `127.0.0.1:8080/2020-11-21/2020-11-25/USDTRY`: list the data between two dates for the given parity code
+- `127.0.0.1:8080/2020-11-21/2020-11-25/USDTRY/absolute`: calculate the return change between two dates for the given parity code, using the chosen method (`absolute`, `relative` or `logaritmic`)
+- `127.0.0.1:8080/dailyparity`: fetch the latest daily data from the TCMB website and save it
 
+POST:
 
-&nbsp;
+- `127.0.0.1:8080/`: validate the data in the body for any number of days and save it all to the database
+- `127.0.0.1:8080/2020-11-21`: validate the data for the given day and save it all to the database
 
+Saving data for a date replaces whatever was already stored for that date.
 
-### Requests within the service:
+### Running
 
-- GET:
-  - ```127.0.0.1:8080/``` &nbsp; List All Data
-  - ```127.0.0.1:8080/2020-11-21/``` &nbsp; List data on the requested date
-  - ```127.0.0.1:8080/2020-11-21/USDTRY``` &nbsp; List the data in the requested date and parity code
-  - ```127.0.0.1:8080/2020-11-21/2020-11-25/USDTRY``` &nbsp; List data between two requested dates and in the parity code
-  - ```127.0.0.1:8080/2020-11-21/2020-11-25/USDTRY/absolute``` &nbsp; Calculate and list the data between the two requested dates and in the parity code according to the desired return exchange method.
-  - ```127.0.0.1:8080/dailyparity``` Scrap daily updated data from the TCMB website. 
-- POST:
-  - ```127.0.0.1:8080/``` &nbsp; Check the data sent without distinguishing the day and save all to the database
-  - ```127.0.0.1:8080/2020-11-21``` &nbsp; Check the data of the day sent according to its parameter and save all to the database
+Built with Spring Boot 2.4.0 and Java 11. Data is stored with Spring Data JPA in an embedded H2 database.
 
-------------------
+```
+sh mvnw spring-boot:run
+```
 
-
-
-&nbsp;
-&nbsp;
-
-
-
-# TR 
-
-## Parity verileri için Spring Boot Rest servisi
-### Para birimlerinin TL karşılıklarının, Parite kodu ve ait olduğu gün ile birlikte tutulduğu parite verilerini içeren Spring Boot REST hizmeti, bu parite verileri üzerinde belirli işlemlerin yapılmasını sağlar.
+On Windows use `mvnw.cmd spring-boot:run`. The service listens on port 8080.
 
 ------------------
 
-- İki para biriminin birbirine oranını hesaplamak için bir metod kullanıldı ve bu yöntem **Bağımlılık Enjeksiyoni Pattern**'i ile Controller Sınıfına dahil edildi. 
-- Getiri değişim yöntemi hesaplaması için 3 farklı fonksiyon tanımlandı ve bu fonksiyonlar **Strateji Pattern**'i ile uygulandı ve kullanıldı.
-- Bu 3 getiri değişim metodu hesaplamasını hizmet içerisinde request parametresinden daha etkin bir şekilde seçmek için **Fabrika Pattern**'i kullanıldı.
-- Kullanıcı tarafından gönderilen request'lerde istenmeyen durumlar oluştuğunda bu durumların kontrolü **Global Exception Handler** ile ve **Global Advice Annotation** ile yapıldı. Ortaya çıkan her istenmeyen durum ayrı ayrı ele alındı.
-- Factory Pattern'i Enum veri tipi ile uygulanacak şekilde değiştirildi.  
-- Ayrı ayrı olarak ele alınan Exception'lar @ControllerAdvice Annotation'ı ile tanımlanan RestErrorHandler içerisinde her Exception için bir fonksiyon tanımlanmış şekildeydi. Bu fonksiyonlar Http Status'lerine göre 2 ayrı fonksiyona ayrıldı ve Exception'lar value şeklinde toplu olarak her Exception için bir fonksiyona parametre olarak verilmek yerine 2 ayrı fonksiyona toplu olarak parametre verildi.  
-- Günlük olarak [TCMB sitesinde](https://www.tcmb.gov.tr/kurlar/today.xml) yayınlanan XML formatındaki parite verilerini veritabanına günlük olarak kaydedebilmek için XMLParser Service'i oluşturuldu.
-  - Durum 1: Bu hizmetin REST servis çalıştığında çalışması için SpringBootApplication.run() metodunda çalıştırılır. Detay için [Commit](https://github.com/muhammedalikocabey/Spring-Boot-Rest-Service/commit/3b35ba6e2a5c12eb33de124e8516b7a7b1d1e758)
-  - Durum 2 :XMLParser kullanıcı GET istek attığında bu istek içerisinde çalışır. Detay için [Commit](https://github.com/muhammedalikocabey/Spring-Boot-Rest-Service/commit/cdd2cd5969f3b83eb5ce116d06c975da4ac6cd64)
-- Veriler piyasaların kapanışında(17.00) günlük olarak yenilendiğinden verileri güncel tutmak için Cron Scheduler eklendi.
-
 &nbsp;
 
+# TR
 
-#### Servis içerisindeki istekler:
+## Parite verileri için Spring Boot REST servisi
 
-- GET:
-  - ```127.0.0.1:8080/``` &nbsp; Tüm verileri Listele
-  - ```127.0.0.1:8080/2020-11-21/``` &nbsp; İstenen tarihteki verileri listele
-  - ```127.0.0.1:8080/2020-11-21/USDTRY``` &nbsp; İstenen tarihteki ve parite kodundaki verileri listele
-  - ```127.0.0.1:8080/2020-11-21/2020-11-25/USDTRY``` &nbsp; İstenen iki tarih arasındaki ve parite kodundaki verileri listele
-  - ```127.0.0.1:8080/2020-11-21/2020-11-25/USDTRY/absolute``` &nbsp; İstenen iki tarih arasındaki ve parite kodundaki verileri istenen getiri değişim metoduna göre hesapla ve listele
-  - ```127.0.0.1:8080/dailyparity``` Günlük güncel verileri TCMB sitesinden kazı. 
-- POST:
-  - ```127.0.0.1:8080/``` &nbsp; Gönderilen verileri gün ayırt etmeden kontrol edip veri tabanına kaydet
-  - ```127.0.0.1:8080/2020-11-21``` &nbsp; Gönderilen güne ait verileri parametresine göre kontrol edip veri tabanına kaydet
+Para birimlerinin TL karşılıklarını, parite kodu ve ait olduğu gün ile birlikte saklayan ve bu parite verileri üzerinde bazı işlemler yapan bir Spring Boot REST servisi.
+
+------------------
+
+- Kayıtlı olmayan bir paritenin değeri, kayıtlı iki pariteden hesaplanır. Örneğin bir günün `USDEUR` değeri, o günün `USDTRY` ve `EURTRY` verilerinden bulunur. Bu hesaplama `CalculateNonExistParity` sınıfındadır ve Controller'a Bağımlılık Enjeksiyonu (Dependency Injection) ile verilir.
+- Getiri değişimi 3 farklı yöntemle hesaplanabilir: `absolute`, `relative` ve `logaritmic`. Her yöntem aynı arayüzün ayrı bir uygulamasıdır (Strategy Pattern).
+- Yöntem, request path'inden bir Factory aracılığıyla seçilir. Factory daha sonra Enum olarak yeniden yazıldı (`ChangeModelFactory`).
+- Hatalı istekler, `@ControllerAdvice` ile tanımlanan `RestErrorHandler` içinde global olarak ele alınır. Her hata durumunun kendi Exception'ı vardır.
+- Başlangıçta her Exception için ayrı bir handler metodu vardı. Bunlar daha sonra HTTP Status'e göre 2 metotta toplandı: eksik veri için `404 Not Found` (boş veritabanı, bulunamayan tarih) ve hatalı girdi için `406 Not Acceptable` (tekrarlanan kayıtlar, sıfır veya negatif fiyatlar, 6 karakter olmayan parite kodları, bilinmeyen parite kodları, bitiş tarihinden sonra gelen başlangıç tarihi).
+- `XMLService`, [TCMB sitesinde](https://www.tcmb.gov.tr/kurlar/today.xml) XML formatında yayınlanan günlük parite verilerini okur ve sonuçlar veritabanına kaydedilir.
+  - Durum 1: İlk sürümde parser, servis başlarken bir `CommandLineRunner` içinden bir kez çalışıyordu. Detay için [Commit](https://github.com/muhammedalikcb/Spring-Boot-Rest-Service/commit/3b35ba6e2a5c12eb33de124e8516b7a7b1d1e758)
+  - Durum 2: Parser artık bir GET isteği (`/dailyparity`) içinde çalışır. Detay için [Commit](https://github.com/muhammedalikcb/Spring-Boot-Rest-Service/commit/cdd2cd5969f3b83eb5ce116d06c975da4ac6cd64)
+- TCMB verileri her gün piyasa kapanışında (17.00) güncellendiği için, veritabanını güncel tutmak adına zamanlanmış bir Cron görevi parser'ı her gün 17.00'de (Europe/Istanbul) çalıştırır.
+
+### Servis içerisindeki istekler
+
+GET:
+
+- `127.0.0.1:8080/`: tüm verileri listele
+- `127.0.0.1:8080/2020-11-21/`: istenen tarihteki verileri listele
+- `127.0.0.1:8080/2020-11-21/USDTRY`: istenen tarihteki ve parite kodundaki verileri listele
+- `127.0.0.1:8080/2020-11-21/2020-11-25/USDTRY`: istenen iki tarih arasındaki ve parite kodundaki verileri listele
+- `127.0.0.1:8080/2020-11-21/2020-11-25/USDTRY/absolute`: istenen iki tarih arasındaki ve parite kodundaki verilerin getiri değişimini seçilen yönteme göre (`absolute`, `relative` veya `logaritmic`) hesapla ve listele
+- `127.0.0.1:8080/dailyparity`: günlük güncel verileri TCMB sitesinden çek ve kaydet
+
+POST:
+
+- `127.0.0.1:8080/`: gönderilen verileri gün ayırt etmeden kontrol et ve hepsini veritabanına kaydet
+- `127.0.0.1:8080/2020-11-21`: gönderilen güne ait verileri kontrol et ve hepsini veritabanına kaydet
+
+Bir tarihe veri kaydedildiğinde, o tarihte daha önce kayıtlı olan veriler silinip yenileriyle değiştirilir.
+
+### Çalıştırma
+
+Spring Boot 2.4.0 ve Java 11 ile geliştirildi. Veriler Spring Data JPA ile gömülü bir H2 veritabanında tutulur.
+
+```
+sh mvnw spring-boot:run
+```
+
+Windows'ta `mvnw.cmd spring-boot:run` kullanılır. Servis 8080 portunda çalışır.
 
 ------------------
